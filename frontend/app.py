@@ -5,8 +5,8 @@ import pandas as pd
 # Import requests to send HTTP POST calls to the Flask REST API
 import requests
 
-# Base URL pointing to the deployed Flask backend microservice
-BACKEND_URL = "https://musical-space-potato-rr79jpjvxj6fp5rq-7860.app.github.dev".rstrip("/")
+# Internal Docker network URL pointing directly to the backend container service on port 7860
+BACKEND_URL = "http://sales-backend-instance:7860"
 
 # Render the primary header title for the dashboard
 st.title("SuperKart Sales Forecast System")
