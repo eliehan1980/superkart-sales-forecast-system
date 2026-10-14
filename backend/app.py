@@ -22,7 +22,7 @@ model = joblib.load("superkart_model.joblib")
 @superkart_api.get('/')
 def home():
     # Return a status confirmation message verifying the API service is reachable
-    return "Welcome to the SuperKart System"
+    return "Welcome to the SuperKart Sales Forecasting System"
 
 # Define a POST endpoint for real-time single-record sales predictions
 @superkart_api.post('/v1/predict')
