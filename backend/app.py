@@ -72,6 +72,5 @@ def predict_sales_batch():
     return output_dict
 
 # Standard entry point to start the local Flask development server when executed directly
-if __name__ == '__main__':
-    # Launch the server with live reload and debugging active
-    superkart_api.run(debug=True)
+if __name__ == "__main__":
+    superkart_api.run(host="0.0.0.0", port=7860)
