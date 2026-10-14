@@ -1,0 +1,18 @@
+services:
+  sales-backend:
+    build: ./backend
+    image: sales-backend-image
+    container_name: sales-backend-instance
+    ports:
+      - "7860:7860"
+
+  sales-frontend:
+    build: ./frontend
+    image: sales-frontend-image
+    container_name: sales-frontend-instance
+    ports:
+      - "8501:8501"
+    extra_hosts:
+      - "sales-backend-instance:host-gateway"
+    depends_on:
+      - sales-backend
