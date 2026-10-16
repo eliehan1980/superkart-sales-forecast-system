@@ -8,23 +8,27 @@ import requests
 # Internal Docker network URL pointing directly to the backend container service on port 7860
 BACKEND_URL = "http://sales-backend-instance:7860"
 
+# Initialize session state for batch predictions persistence
+if "batch_results" not in st.session_state:
+    st.session_state.batch_results = None
+
 # Render the primary header title for the dashboard
 st.title("SuperKart Sales Forecast System")
 
 # Display introductory text guiding the user on inputting data
 st.write("Enter the product and store details below to predict the total sales.")
 
-# Numeric input field for Product_Weight (default set to dataset median: 12.66 kg)
-Product_Weight = st.number_input("Product Weight", min_value=0.0, value=12.66)
+# Numeric input field for Product_Weight with lower and upper bounds (min: 4.0 kg, max: 25.0 kg, default: 12.66 kg)
+Product_Weight = st.number_input("Product Weight", min_value=4.0, max_value=25.0, value=12.66)
 
 # Dropdown selection for sugar category (default set to dataset mode: Low Sugar)
 Product_Sugar_Content = st.selectbox("Product Sugar Content", ["Low Sugar", "Regular", "No Sugar"], index=0)
 
-# Numeric input field for display area allocation ratio (default set to dataset median: 0.056)
-Product_Allocated_Area = st.number_input("Product Allocated Area", min_value=0.0, value=0.056)
+# Numeric input field for display area allocation ratio (min: 0.001, max: 0.35, default: 0.056)
+Product_Allocated_Area = st.number_input("Product Allocated Area", min_value=0.001, max_value=0.35, value=0.056)
 
-# Numeric input field for Maximum Retail Price (default set to dataset median: ₹146.74)
-Product_MRP = st.number_input("Product MRP", min_value=0.0, value=146.74)
+# Numeric input field for Maximum Retail Price (min: 25.0, max: 300.0, default: ₹146.74)
+Product_MRP = st.number_input("Product MRP", min_value=25.0, max_value=300.0, value=146.74)
 
 # Dropdown selection for store physical footprint (default set to dataset mode: Medium)
 Store_Size = st.selectbox("Store Size", ["Medium", "High", "Small"], index=0)
@@ -38,8 +42,8 @@ Store_Type = st.selectbox("Store Type", ["Supermarket Type2", "Supermarket Type1
 # Dropdown selection for high-level SKU prefix (default set to dataset mode: FD)
 Product_Id_char = st.selectbox("Product ID Character", ["FD", "DR", "NC"], index=0)
 
-# Numeric input field for operational store age (default set to median store age: 16 years)
-Store_Age_Years = st.number_input("Store Age (Years)", min_value=0, value=16)
+# Numeric input field for operational store age (min: 0, max: 50, default: 16 years)
+Store_Age_Years = st.number_input("Store Age (Years)", min_value=0, max_value=50, value=16)
 
 # Dropdown selection for engineered shelf-life tier (default set to mode: Non Perishables)
 Product_Type_Category = st.selectbox("Product Type Category", ["Non Perishables", "Perishables"], index=0)
@@ -60,11 +64,16 @@ product_data = {
 
 # Render a prominent submission button to trigger single real-time prediction
 if st.button("Predict", type="primary"):
-    response = requests.post(f"{BACKEND_URL}/v1/predict", json=product_data)
-    if response.status_code == 200:
-        st.success(f"Predicted Product Store Sales Total: ₹{response.json()['Sales']:.2f}")
-    else:
-        st.error("Unable to connect to the prediction API.")
+    try:
+        response = requests.post(f"{BACKEND_URL}/v1/predict", json=product_data, timeout=10)
+        if response.status_code == 200:
+            st.success(f"Predicted Product Store Sales Total: ₹{response.json()['Sales']:.2f}")
+        else:
+            st.error(f"Inference error ({response.status_code}): {response.text}")
+    except requests.exceptions.Timeout:
+        st.error("Request timed out after 10 seconds. Check backend performance.")
+    except requests.exceptions.RequestException as e:
+        st.error(f"Network error connecting to backend: {e}")
 
 # Render section header for processing multiple inventory records at once
 st.subheader("Batch Prediction")
@@ -78,12 +87,28 @@ if uploaded_file is not None:
 
     if st.button("Predict Batch", type="secondary"):
         files = {"file": uploaded_file.getvalue()}
-        batch_response = requests.post(f"{BACKEND_URL}/v1/predictbatch", files=files)
+        try:
+            batch_response = requests.post(f"{BACKEND_URL}/v1/predictbatch", files=files, timeout=30)
+            if batch_response.status_code == 200:
+                predictions = batch_response.json()
+                result_df = batch_df.copy()
+                result_df["Predicted_Sales"] = [predictions.get(str(i)) for i in range(len(result_df))]
+                st.session_state.batch_results = result_df
+                st.success("Batch forecasting complete!")
+            else:
+                st.error(f"Batch prediction failed ({batch_response.status_code}): {batch_response.text}")
+        except requests.exceptions.Timeout:
+            st.error("Batch request timed out after 30 seconds.")
+        except requests.exceptions.RequestException as e:
+            st.error(f"Network error during batch transfer: {e}")
 
-        if batch_response.status_code == 200:
-            predictions = batch_response.json()
-            batch_df["Predicted_Sales"] = [predictions.get(str(i)) for i in range(len(batch_df))]
-            st.success("Batch forecasting complete!")
-            st.dataframe(batch_df)
-        else:
-            st.error(f"Batch prediction failed with status {batch_response.status_code}.")
+# Render persisted batch predictions with download utility
+if st.session_state.batch_results is not None:
+    st.dataframe(st.session_state.batch_results)
+    csv_data = st.session_state.batch_results.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="Download Forecasted Catalog (CSV)",
+        data=csv_data,
+        file_name="superkart_forecasted_catalog.csv",
+        mime="text/csv",
+    )
