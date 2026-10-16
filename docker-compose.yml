@@ -1,18 +1,29 @@
+version: '3.8'
+
 services:
   sales-backend:
-    build: ./backend
-    image: sales-backend-image
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: sales-backend-instance
     ports:
       - "7860:7860"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: always
 
   sales-frontend:
-    build: ./frontend
-    image: sales-frontend-image
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: sales-frontend-instance
     ports:
       - "8501:8501"
-    extra_hosts:
-      - "sales-backend-instance:host-gateway"
     depends_on:
       - sales-backend
+    extra_hosts:
+      - "sales-backend-instance:host-gateway"
+    restart: always
