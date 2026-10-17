@@ -90,24 +90,60 @@ def predict_sales():
 # Define a POST endpoint to handle batch inference via uploaded CSV files
 @superkart_api.post("/v1/predictbatch")
 def predict_sales_batch():
+  # The exact columns the model was trained on
+  required_cols = [
+      "Product_Weight",
+      "Product_Sugar_Content",
+      "Product_Allocated_Area",
+      "Product_MRP",
+      "Store_Size",
+      "Store_Location_City_Type",
+      "Store_Type",
+      "Product_Id_char",
+      "Store_Age_Years",
+      "Product_Type_Category",
+  ]
+  # Helper that builds the standard "CSV not compatible" error response
+  def csv_error(reason):
+    return jsonify({
+        "error": "CSV format not compatible. " + reason +
+                 " Please upload a .csv file with a header row containing exactly these columns: "
+                 + ", ".join(required_cols) + "."
+    }), 400
+  # No file in the request
   if "file" not in request.files:
-    return jsonify({"error": "No file payload found under form key 'file'"}), 400
-
-  # Retrieve the uploaded CSV file from the multipart form request
-  file = request.files["file"]
+    return csv_error("No file was received.")
+  # File is not readable as a CSV
   try:
-    input_data = pd.read_csv(file)
-  except Exception as e:
-    return jsonify({"error": f"Failed to parse CSV payload: {str(e)}"}), 400
-
-  # Run vectorized inference on the entire batch and convert NumPy array output to a list
-  predictions = model.predict(input_data).tolist()
-
-  # Map array indices to their predicted sales rounded to 2 decimal places
-  output_dict = {str(i): round(pred, 2) for i, pred in enumerate(predictions)}
-
-  # Return the indexed prediction dictionary as a JSON response
-  return jsonify(output_dict)
+    input_data = pd.read_csv(request.files["file"])
+  except Exception:
+    return csv_error("The file could not be read as a CSV.")
+  # Header only, no rows
+  if input_data.empty:
+    return csv_error("The file has no data rows.")
+  # Columns must match exactly: nothing missing, nothing extra
+  missing = [c for c in required_cols if c not in input_data.columns]
+  extra = [c for c in input_data.columns if c not in required_cols]
+  if missing or extra:
+    reason = ""
+    if missing:
+      reason += "Missing columns: " + ", ".join(missing) + "."
+    if extra:
+      reason += " Unexpected columns (please remove): " + ", ".join(extra) + "."
+    return csv_error(reason.strip())
+  # Put the columns in training order (column order in the file does not matter)
+  input_data = input_data[required_cols]
+  # No blank cells allowed
+  empty_cols = [c for c in required_cols if input_data[c].isnull().any()]
+  if empty_cols:
+    return csv_error("Empty values found in: " + ", ".join(empty_cols) + ".")
+  # Run the model; any remaining problem with the values is reported as a CSV problem
+  try:
+    predictions = model.predict(input_data).tolist()
+  except Exception:
+    return csv_error("Some values could not be processed (check numbers are numeric and text values are spelled as expected).")
+  # Map row index to predicted sales rounded to 2 decimal places
+  return jsonify({str(i): round(p, 2) for i, p in enumerate(predictions)})
 
 
 # Standard entry point to start the local Flask development server when executed directly
